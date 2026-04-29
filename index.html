@@ -349,6 +349,10 @@ body{font-family:'DM Sans',sans-serif;color:var(--text);display:flex;flex-direct
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="21" x2="12" y2="3"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/></svg>
         Pull All Data from Sheet (New Device)
       </button>
+      <button class="btn btn-ghost" onclick="testScriptConnection()" style="margin-top:8px;padding:10px;font-size:0.78rem;">
+        🔍 Test Connection (Debug)
+      </button>
+      <div id="debugOut" style="margin-top:8px;font-size:0.72rem;color:var(--text2);background:var(--bg2);border-radius:8px;padding:10px;display:none;word-break:break-all;white-space:pre-wrap;max-height:200px;overflow-y:auto;"></div>
       <div class="last-sync" id="lastSyncText"></div>
     </div>
 
@@ -911,6 +915,39 @@ async function sendDeleteToSheets(id){
   try{
     await fetch(cfg.scriptUrl,{method:'POST',body:JSON.stringify({deleteId:id}),headers:{'Content-Type':'text/plain'}});
   }catch(e){/* fire and forget */}
+}
+
+function testScriptConnection(){
+  const dbg=document.getElementById('debugOut');
+  dbg.style.display='block';
+  dbg.textContent='Testing…\n';
+  if(!cfg.scriptUrl){dbg.textContent+='❌ No script URL saved.\n';return;}
+  dbg.textContent+='URL: '+cfg.scriptUrl+'\n';
+  dbg.textContent+='Method: JSONP (script tag)\n';
+  const cbName='_test'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{
+    delete window[cbName];
+    if(script.parentNode)script.parentNode.removeChild(script);
+    dbg.textContent+='❌ TIMED OUT after 15s — script never responded.\nPossible causes:\n- Script not deployed as new version\n- Wrong URL\n- No internet on this device\n';
+  },15000);
+  window[cbName]=function(json){
+    clearTimeout(timer);
+    delete window[cbName];
+    if(script.parentNode)script.parentNode.removeChild(script);
+    dbg.textContent+='✅ Got response!\n';
+    if(json.error)dbg.textContent+='❌ Script error: '+json.error+'\n';
+    else if(json.rows)dbg.textContent+='✅ Rows found: '+json.rows.length+'\nFirst row: '+JSON.stringify(json.rows[0]).slice(0,100)+'\n';
+    else dbg.textContent+='⚠️ Unknown response: '+JSON.stringify(json).slice(0,100)+'\n';
+  };
+  script.onerror=function(){
+    clearTimeout(timer);
+    delete window[cbName];
+    dbg.textContent+='❌ Script tag error — URL may be invalid or blocked.\n';
+  };
+  script.src=cfg.scriptUrl+(cfg.scriptUrl.includes('?')?'&':'?')+'callback='+cbName;
+  document.head.appendChild(script);
+  dbg.textContent+='Script tag injected, waiting for response…\n';
 }
 
 function pullFromSheets(){
