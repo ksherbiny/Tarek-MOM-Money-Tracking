@@ -922,10 +922,10 @@ async function pullFromSheets(){
     const res=await fetch(cfg.scriptUrl,{method:'GET',redirect:'follow'});
     let json;
     try{json=await res.json();}
-    catch(je){showToast('❌ Script returned non-JSON — did you copy & redeploy the NEW script?',true);updateSyncStatus('connected');return;}
-    if(!json.rows||!Array.isArray(json.rows)){showToast('❌ Unexpected response from script',true);updateSyncStatus('connected');return;}
+    catch(je){showToast('❌ Script returned non-JSON — paste the NEW script code and redeploy',true);updateSyncStatus('connected');return;}
     if(json.error){showToast('❌ Script error: '+json.error,true);updateSyncStatus('connected');return;}
-    if(json.debug){showToast('⚠️ '+json.debug,true);updateSyncStatus('connected');return;}
+    if(!json.rows||!Array.isArray(json.rows)){showToast('❌ Bad response: '+JSON.stringify(json).slice(0,80),true);updateSyncStatus('connected');return;}
+    if(json.rows.length===0){showToast(json.debug?'⚠️ '+json.debug:'❌ Sheet has no data rows',true);updateSyncStatus('connected');return;}
     const imported=json.rows.filter(r=>r.id&&r.date&&r.type);
     if(imported.length===0){showToast('❌ Sheet appears empty',true);updateSyncStatus('connected');return;}
     txs=imported;saveTxs(txs);
