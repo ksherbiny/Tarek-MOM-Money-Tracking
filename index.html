@@ -370,36 +370,47 @@ body{font-family:'DM Sans',sans-serif;color:var(--text);display:flex;flex-direct
 
       <div style="font-size:0.75rem;font-weight:700;color:var(--text2);margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.5px">Paste this into Apps Script:</div>
       <div class="code-block" id="scriptCode">function doGet(e) {
-  const sheet = SpreadsheetApp
-    .getActiveSpreadsheet()
-    .getActiveSheet();
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
+  try {
+    const sheet = SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getActiveSheet();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      return ContentService
+        .createTextOutput(JSON.stringify({rows:[], debug:'sheet has no data rows'}))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    const data = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
+    const rows = data
+      .filter(r => r[0] !== '' && r[0] !== null)
+      .map(r => {
+        const d = r[1];
+        let dateStr;
+        if (d instanceof Date) {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          dateStr = y + '-' + m + '-' + day;
+        } else {
+          dateStr = String(d);
+        }
+        return {
+          id: String(r[0]),
+          date: dateStr,
+          type: String(r[2]),
+          amount: Number(r[3]),
+          cat: String(r[4] || 'other'),
+          comment: String(r[5] || '')
+        };
+      });
     return ContentService
-      .createTextOutput(JSON.stringify({rows:[]}))
+      .createTextOutput(JSON.stringify({rows}))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({rows:[], error: err.message}))
       .setMimeType(ContentService.MimeType.JSON);
   }
-  const tz = Session.getScriptTimeZone();
-  const data = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
-  const rows = data
-    .filter(r => r[0] && r[2] && r[3] !== '')
-    .map(r => {
-      const d = r[1];
-      const dateStr = (d instanceof Date)
-        ? Utilities.formatDate(d, tz, 'yyyy-MM-dd')
-        : String(r[1]);
-      return {
-        id: String(r[0]),
-        date: dateStr,
-        type: String(r[2]),
-        amount: Number(r[3]),
-        cat: String(r[4] || 'other'),
-        comment: String(r[5] || '')
-      };
-    });
-  return ContentService
-    .createTextOutput(JSON.stringify({rows}))
-    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
@@ -911,9 +922,11 @@ async function pullFromSheets(){
     const res=await fetch(cfg.scriptUrl,{method:'GET',redirect:'follow'});
     let json;
     try{json=await res.json();}
-    catch(je){showToast('❌ Script returned non-JSON — did you copy & redeploy the NEW script code?',true);updateSyncStatus('connected');return;}
-    if(!json.rows||!Array.isArray(json.rows)){showToast('❌ No rows found — make sure the sheet has data',true);updateSyncStatus('connected');return;}
-    const imported=json.rows.filter(r=>r.id&&r.date&&r.type&&r.amount!==undefined);
+    catch(je){showToast('❌ Script returned non-JSON — did you copy & redeploy the NEW script?',true);updateSyncStatus('connected');return;}
+    if(!json.rows||!Array.isArray(json.rows)){showToast('❌ Unexpected response from script',true);updateSyncStatus('connected');return;}
+    if(json.error){showToast('❌ Script error: '+json.error,true);updateSyncStatus('connected');return;}
+    if(json.debug){showToast('⚠️ '+json.debug,true);updateSyncStatus('connected');return;}
+    const imported=json.rows.filter(r=>r.id&&r.date&&r.type);
     if(imported.length===0){showToast('❌ Sheet appears empty',true);updateSyncStatus('connected');return;}
     txs=imported;saveTxs(txs);
     cfg.lastSync=new Date().toLocaleString();saveCfg(cfg);
