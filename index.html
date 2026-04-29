@@ -386,7 +386,7 @@ body{font-family:'DM Sans',sans-serif;color:var(--text);display:flex;flex-direct
       .map(r => {
         const d = r[1];
         let dateStr;
-        if (d instanceof Date) {
+        if (d && typeof d.getTime === 'function') {
           const y = d.getFullYear();
           const m = String(d.getMonth() + 1).padStart(2, '0');
           const day = String(d.getDate()).padStart(2, '0');
@@ -926,7 +926,11 @@ async function pullFromSheets(){
     if(json.error){showToast('❌ Script error: '+json.error,true);updateSyncStatus('connected');return;}
     if(!json.rows||!Array.isArray(json.rows)){showToast('❌ Bad response: '+JSON.stringify(json).slice(0,80),true);updateSyncStatus('connected');return;}
     if(json.rows.length===0){showToast(json.debug?'⚠️ '+json.debug:'❌ Sheet has no data rows',true);updateSyncStatus('connected');return;}
-    const imported=json.rows.filter(r=>r.id&&r.date&&r.type);
+    const imported=json.rows.filter(r=>r.id&&r.date&&r.type).map(r=>{
+      const d=new Date(r.date);
+      const date=!isNaN(d.getTime())?d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'):r.date;
+      return{...r,date};
+    });
     if(imported.length===0){showToast('❌ Sheet appears empty',true);updateSyncStatus('connected');return;}
     txs=imported;saveTxs(txs);
     cfg.lastSync=new Date().toLocaleString();saveCfg(cfg);
