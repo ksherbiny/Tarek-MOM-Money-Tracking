@@ -913,35 +913,45 @@ async function sendDeleteToSheets(id){
   }catch(e){/* fire and forget */}
 }
 
-async function pullFromSheets(){
+function pullFromSheets(){
   if(!cfg.scriptUrl){showToast('Save your Apps Script URL first',true);return;}
   if(!confirm('This will REPLACE all data on this device with data from Google Sheets. Continue?'))return;
   updateSyncStatus('syncing');
   showToast('⏳ Loading data from Google Sheets…');
-  try{
-    const res=await fetch(cfg.scriptUrl,{method:'GET',redirect:'follow'});
-    let json;
-    try{json=await res.json();}
-    catch(je){showToast('❌ Script returned non-JSON — paste the NEW script code and redeploy',true);updateSyncStatus('connected');return;}
+  const cbName='_gsCb'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{
+    cleanup();
+    showToast('❌ Timed out — check your Script URL and internet connection',true);
+    updateSyncStatus(cfg.scriptUrl?'connected':'disconnected');
+  },15000);
+  function cleanup(){clearTimeout(timer);delete window[cbName];if(script.parentNode)script.parentNode.removeChild(script);}
+  window[cbName]=function(json){
+    cleanup();
     if(json.error){showToast('❌ Script error: '+json.error,true);updateSyncStatus('connected');return;}
-    if(!json.rows||!Array.isArray(json.rows)){showToast('❌ Bad response: '+JSON.stringify(json).slice(0,80),true);updateSyncStatus('connected');return;}
-    if(json.rows.length===0){showToast(json.debug?'⚠️ '+json.debug:'❌ Sheet has no data rows',true);updateSyncStatus('connected');return;}
+    if(!json.rows||!Array.isArray(json.rows)||json.rows.length===0){
+      showToast(json.debug?'⚠️ '+json.debug:'❌ Sheet has no data rows',true);updateSyncStatus('connected');return;
+    }
     const imported=json.rows.filter(r=>r.id&&r.date&&r.type).map(r=>{
       const d=new Date(r.date);
       const date=!isNaN(d.getTime())?d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'):r.date;
       return{...r,date};
     });
-    if(imported.length===0){showToast('❌ Sheet appears empty',true);updateSyncStatus('connected');return;}
+    if(imported.length===0){showToast('❌ No valid rows found in sheet',true);updateSyncStatus('connected');return;}
     txs=imported;saveTxs(txs);
     cfg.lastSync=new Date().toLocaleString();saveCfg(cfg);
     updateSyncStatus('connected');
     document.getElementById('lastSyncText').textContent='Last synced: '+cfg.lastSync;
     renderHome();
     showToast('✅ Loaded '+imported.length+' entries from Google Sheets','success');
-  }catch(e){
-    showToast('❌ Network error — check internet connection and Script URL',true);
+  };
+  script.onerror=function(){
+    cleanup();
+    showToast('❌ Failed to reach script — check URL and redeploy',true);
     updateSyncStatus(cfg.scriptUrl?'connected':'disconnected');
-  }
+  };
+  script.src=cfg.scriptUrl+(cfg.scriptUrl.includes('?')?'&':'?')+'callback='+cbName;
+  document.head.appendChild(script);
 }
 
 async function syncAllToSheets(){
