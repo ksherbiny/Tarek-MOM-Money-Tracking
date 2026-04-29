@@ -379,11 +379,24 @@ body{font-family:'DM Sans',sans-serif;color:var(--text);display:flex;flex-direct
       .createTextOutput(JSON.stringify({rows:[]}))
       .setMimeType(ContentService.MimeType.JSON);
   }
+  const tz = Session.getScriptTimeZone();
   const data = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
-  const rows = data.map(r => ({
-    id: r[0], date: r[1], type: r[2],
-    amount: r[3], cat: r[4], comment: r[5]
-  }));
+  const rows = data
+    .filter(r => r[0] && r[2] && r[3] !== '')
+    .map(r => {
+      const d = r[1];
+      const dateStr = (d instanceof Date)
+        ? Utilities.formatDate(d, tz, 'yyyy-MM-dd')
+        : String(r[1]);
+      return {
+        id: String(r[0]),
+        date: dateStr,
+        type: String(r[2]),
+        amount: Number(r[3]),
+        cat: String(r[4] || 'other'),
+        comment: String(r[5] || '')
+      };
+    });
   return ContentService
     .createTextOutput(JSON.stringify({rows}))
     .setMimeType(ContentService.MimeType.JSON);
@@ -895,14 +908,13 @@ async function pullFromSheets(){
   updateSyncStatus('syncing');
   showToast('⏳ Loading data from Google Sheets…');
   try{
-    const res=await fetch(cfg.scriptUrl,{method:'GET'});
-    const json=await res.json();
-    if(!json.rows||!Array.isArray(json.rows)){showToast('No data returned from Sheet',true);updateSyncStatus(cfg.scriptUrl?'connected':'disconnected');return;}
-    const imported=json.rows.filter(r=>r.id&&r.date&&r.type&&r.amount!==undefined).map(r=>({
-      id:String(r.id),date:r.date,type:r.type,
-      amount:Number(r.amount),cat:r.cat||'other',comment:r.comment||''
-    }));
-    if(imported.length===0){showToast('Sheet appears empty',true);updateSyncStatus('connected');return;}
+    const res=await fetch(cfg.scriptUrl,{method:'GET',redirect:'follow'});
+    let json;
+    try{json=await res.json();}
+    catch(je){showToast('❌ Script returned non-JSON — did you copy & redeploy the NEW script code?',true);updateSyncStatus('connected');return;}
+    if(!json.rows||!Array.isArray(json.rows)){showToast('❌ No rows found — make sure the sheet has data',true);updateSyncStatus('connected');return;}
+    const imported=json.rows.filter(r=>r.id&&r.date&&r.type&&r.amount!==undefined);
+    if(imported.length===0){showToast('❌ Sheet appears empty',true);updateSyncStatus('connected');return;}
     txs=imported;saveTxs(txs);
     cfg.lastSync=new Date().toLocaleString();saveCfg(cfg);
     updateSyncStatus('connected');
@@ -910,7 +922,7 @@ async function pullFromSheets(){
     renderHome();
     showToast('✅ Loaded '+imported.length+' entries from Google Sheets','success');
   }catch(e){
-    showToast('❌ Failed to load — check your Script URL and redeploy',true);
+    showToast('❌ Network error — check internet connection and Script URL',true);
     updateSyncStatus(cfg.scriptUrl?'connected':'disconnected');
   }
 }
